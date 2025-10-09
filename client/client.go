@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/tarm/serial"
+	"github.com/joho/godotenv"
 )
 
 // JSON структуры для сообщений (должны совпадать с сервером)
@@ -604,6 +605,9 @@ func getServerAddress() (string, int) {
 }
 
 func main() {
+	// Попытка загрузить файл .env в переменные окружения (локальная разработка)
+	_ = godotenv.Load()
+
 	server, port := getServerAddress()
 
 	fmt.Printf("Подключение к %s:%d...\n", server, port)
