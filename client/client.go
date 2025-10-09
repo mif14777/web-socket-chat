@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/tarm/serial"
 	"github.com/joho/godotenv"
+	"github.com/tarm/serial"
 )
 
 // JSON структуры для сообщений (должны совпадать с сервером)
