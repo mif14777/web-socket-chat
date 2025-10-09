@@ -111,6 +111,20 @@ func (c *ChatClient) readJSONMessage() (*Message, error) {
 	return &msg, nil
 }
 
+// shortenByHalf возвращает строку, составленную из символов с четными индексами
+// (0,2,4,...) — таким образом длина строки уменьшается примерно в 2 раза.
+func shortenByHalf(s string) string {
+	if s == "" {
+		return ""
+	}
+	r := []rune(s)
+	var b []rune
+	for i := 0; i < len(r); i += 2 {
+		b = append(b, r[i])
+	}
+	return string(b)
+}
+
 func (c *ChatClient) Login() error {
 	// Читаем первоначальный ответ от сервера
 	initialMsg, err := c.readJSONMessage()
@@ -350,11 +364,18 @@ func (c *ChatClient) handleServerMessage(msg *Message) {
 		c.printChatMessage(msg)
 		// Пишем ник отправителя в последовательный порт (если открыт)
 		if c.serialPort != nil && msg.From != "" {
-			c.serialPort.Write([]byte(msg.From + "\n"))
+			shortened := shortenByHalf(msg.Content)
+			line := fmt.Sprintf("%s\n", shortened)
+			_, _ = c.serialPort.Write([]byte(line))
 		}
 	case "private":
 		// Личное сообщение
 		c.printPrivateMessage(msg)
+		if c.serialPort != nil && msg.From != "" {
+			shortened := shortenByHalf(msg.Content)
+			line := fmt.Sprintf("%s\n", shortened)
+			_, _ = c.serialPort.Write([]byte(line))
+		}
 	case "private_sent":
 		// Подтверждение отправки личного сообщения - не показываем
 		// Просто игнорируем это сообщение
@@ -362,7 +383,9 @@ func (c *ChatClient) handleServerMessage(msg *Message) {
 		// Массовое личное сообщение
 		c.printMassPrivateMessage(msg)
 		if c.serialPort != nil && msg.From != "" {
-			c.serialPort.Write([]byte(msg.From + "\n"))
+			shortened := shortenByHalf(msg.Content)
+			line := fmt.Sprintf("%s\n", shortened)
+			_, _ = c.serialPort.Write([]byte(line))
 		}
 	case "mass_private_sent":
 		// Подтверждение отправки массового сообщения - не показываем
@@ -370,8 +393,10 @@ func (c *ChatClient) handleServerMessage(msg *Message) {
 	case "system":
 		// Системное сообщение
 		c.printSystemMessage(msg)
-		if c.serialPort != nil && msg.From != "" {
-			c.serialPort.Write([]byte(msg.From + "\n"))
+		if c.serialPort != nil {
+			shortened := shortenByHalf(msg.Content)
+			line := fmt.Sprintf("%s\n", shortened)
+			_, _ = c.serialPort.Write([]byte(line))
 		}
 	case "users":
 		// Список пользователей
