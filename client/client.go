@@ -7,11 +7,13 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/tarm/serial"
 )
 
 // JSON структуры для сообщений (должны совпадать с сервером)
@@ -35,6 +37,7 @@ type ChatClient struct {
 	running       bool
 	consoleReader *bufio.Reader
 	done          chan struct{}
+	serialPort    *serial.Port
 }
 
 func NewChatClient(server string, port int) *ChatClient {
@@ -59,6 +62,26 @@ func (c *ChatClient) Connect() error {
 
 	c.conn = conn
 	fmt.Printf("✅ Подключено к WebSocket серверу %s\n", u.String())
+
+	// Попытка открыть последовательный порт через библиотеку, если указан SERIAL_PORT
+	serialName := os.Getenv("SERIAL_PORT")
+	if serialName != "" {
+		baud := 9600
+		if b := os.Getenv("SERIAL_BAUD"); b != "" {
+			if bv, err := strconv.Atoi(b); err == nil && bv > 0 {
+				baud = bv
+			}
+		}
+
+		cfg := &serial.Config{Name: serialName, Baud: baud}
+		sp, err := serial.OpenPort(cfg)
+		if err != nil {
+			fmt.Printf("⚠️ Не удалось открыть последовательный порт %s @ %d: %v\n", serialName, baud, err)
+		} else {
+			c.serialPort = sp
+			fmt.Printf("🔌 Открыт последовательный порт %s @ %d\n", serialName, baud)
+		}
+	}
 	return nil
 }
 
@@ -170,8 +193,10 @@ func (c *ChatClient) Start() {
 	fmt.Println("  #all сообщение - массовое личное сообщение")
 	fmt.Println("  @ник сообщение - приватное сообщение")
 	fmt.Println("  #mailbox - проверить почтовый ящик")
+	fmt.Println("  #last <ник> - показать последнее сообщение пользователя")
 	fmt.Println("  #block ник - добавить в чёрный список")
 	fmt.Println("  #unblock ник - убрать из чёрного списка")
+	fmt.Println("  #wordlengths - переключить режим показа длин слов")
 	fmt.Println("  /quit - выход из чата")
 	fmt.Println(strings.Repeat("=", 50))
 
@@ -229,8 +254,14 @@ func (c *ChatClient) handleCommand(message string) {
 	msg.Data["command"] = cmd
 
 	switch cmd {
-	case "help", "users", "mailbox":
+	case "help", "users", "mailbox", "wordlengths":
 		// Простые команды без параметров
+	case "last":
+		if len(parts) < 2 {
+			fmt.Println("❌ Использование: #last <ник>")
+			return
+		}
+		msg.Data["target"] = parts[1]
 	case "all":
 		if len(parts) < 2 {
 			fmt.Println("❌ Использование: #all сообщение")
@@ -316,6 +347,10 @@ func (c *ChatClient) handleServerMessage(msg *Message) {
 	case "chat":
 		// Обычное сообщение в чат
 		c.printChatMessage(msg)
+		// Пишем ник отправителя в последовательный порт (если открыт)
+		if c.serialPort != nil && msg.From != "" {
+			c.serialPort.Write([]byte(msg.From + "\n"))
+		}
 	case "private":
 		// Личное сообщение
 		c.printPrivateMessage(msg)
@@ -325,12 +360,18 @@ func (c *ChatClient) handleServerMessage(msg *Message) {
 	case "mass_private":
 		// Массовое личное сообщение
 		c.printMassPrivateMessage(msg)
+		if c.serialPort != nil && msg.From != "" {
+			c.serialPort.Write([]byte(msg.From + "\n"))
+		}
 	case "mass_private_sent":
 		// Подтверждение отправки массового сообщения - не показываем
 		// Просто игнорируем это сообщение
 	case "system":
 		// Системное сообщение
 		c.printSystemMessage(msg)
+		if c.serialPort != nil && msg.From != "" {
+			c.serialPort.Write([]byte(msg.From + "\n"))
+		}
 	case "users":
 		// Список пользователей
 		c.handleUserList(msg)
@@ -340,6 +381,13 @@ func (c *ChatClient) handleServerMessage(msg *Message) {
 	case "mailbox_status":
 		// Статус почтового ящика
 		c.printMailboxStatus(msg)
+	case "last_result":
+		// Результат команды #last
+		if msg.From != "" {
+			fmt.Printf("\nПоследнее от %s (%s): %s\n> ", msg.From, msg.Timestamp, msg.Content)
+		} else {
+			fmt.Printf("\n%s\n> ", msg.Content)
+		}
 	case "offline_message":
 		// Отложенное сообщение
 		c.printOfflineMessage(msg)
@@ -367,6 +415,9 @@ func (c *ChatClient) handleServerMessage(msg *Message) {
 	case "unblocked":
 		// Пользователь разблокирован
 		c.printUnblocked(msg)
+	case "wordlengths_toggle":
+		// Переключение режима показа длин слов
+		c.printWordLengthsToggle(msg)
 	case "error":
 		// Ошибка
 		c.printError(msg)
@@ -457,6 +508,10 @@ func (c *ChatClient) printUnblocked(msg *Message) {
 	fmt.Printf("\n✅ %s\n> ", msg.Content)
 }
 
+func (c *ChatClient) printWordLengthsToggle(msg *Message) {
+	fmt.Printf("\n🔢 %s\n> ", msg.Content)
+}
+
 func (c *ChatClient) printError(msg *Message) {
 	fmt.Printf("\n❌ %s\n> ", msg.Error)
 }
@@ -501,6 +556,10 @@ func (c *ChatClient) cleanup() {
 		c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		time.Sleep(time.Second) // Даем время на отправку сообщения
 		c.conn.Close()
+	}
+	if c.serialPort != nil {
+		c.serialPort.Close()
+		fmt.Println("🔌 Последовательный порт закрыт")
 	}
 	fmt.Println("✅ WebSocket соединение закрыто")
 }
