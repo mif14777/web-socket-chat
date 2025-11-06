@@ -340,6 +340,9 @@ func (g *GUIClient) onSend() {
 		m := Message{Type: "message", Content: text}
 		if err := g.writeJSON(m); err != nil {
 			g.appendLine("❌ Ошибка отправки: " + err.Error())
+		} else {
+			// Echo own message locally
+			g.appendLine(fmt.Sprintf("Вы: %s", text))
 		}
 	}
 
