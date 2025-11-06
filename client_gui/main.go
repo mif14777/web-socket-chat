@@ -419,7 +419,7 @@ func (g *GUIClient) appendLineWithStyle(line string, style widget.RichTextStyle)
 		Text:  line,
 		Style: style,
 	}
-	
+
 	// Append to existing segments
 	if len(g.chatArea.Segments) > 0 {
 		// Add newline before new segment
@@ -427,7 +427,7 @@ func (g *GUIClient) appendLineWithStyle(line string, style widget.RichTextStyle)
 	}
 	g.chatArea.Segments = append(g.chatArea.Segments, seg)
 	g.chatArea.Refresh()
-	
+
 	if g.chatScroll != nil {
 		g.chatScroll.ScrollToBottom()
 	}
