@@ -38,7 +38,7 @@ type GUIClient struct {
 	port    int
 	running bool
 
-	chatArea     *widget.Entry
+	chatArea     *widget.Label
 	messageEntry *widget.Entry
 	sendBtn      *widget.Button
 	connectBtn   *widget.Button
@@ -48,11 +48,13 @@ type GUIClient struct {
 	nickEntry   *widget.Entry
 
 	win fyne.Window
+
+	chatBuf string
 }
 
 func NewGUIClient(win fyne.Window) *GUIClient {
-	chat := widget.NewMultiLineEntry()
-	chat.Disable() // read-only output area
+	chat := widget.NewLabel("")
+	chat.Wrapping = fyne.TextWrapWord
 	msgEntry := widget.NewEntry()
 	msgEntry.SetPlaceHolder("Введите сообщение… (#команды и @приват тоже работают)")
 
@@ -344,12 +346,12 @@ func (g *GUIClient) onSend() {
 }
 
 func (g *GUIClient) appendLine(line string) {
-	// Update chat area; Fyne widgets support being updated from goroutines safely.
-	if g.chatArea.Text == "" {
-		g.chatArea.SetText(line)
+	if g.chatBuf == "" {
+		g.chatBuf = line
 	} else {
-		g.chatArea.SetText(g.chatArea.Text + "\n" + line)
+		g.chatBuf += "\n" + line
 	}
+	g.chatArea.SetText(g.chatBuf)
 }
 
 func (g *GUIClient) cleanup() {
