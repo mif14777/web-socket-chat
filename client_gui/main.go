@@ -51,6 +51,10 @@ type GUIClient struct {
 
 	chatBuf    string
 	chatScroll *container.Scroll
+
+	// User list
+	users     []string
+	usersList *widget.List
 }
 
 func NewGUIClient(win fyne.Window) *GUIClient {
@@ -86,6 +90,23 @@ func NewGUIClient(win fyne.Window) *GUIClient {
 
 	gc.messageEntry.OnSubmitted = func(string) { gc.onSend() }
 
+	// User list widget
+	gc.usersList = widget.NewList(
+		func() int { return len(gc.users) },
+		func() fyne.CanvasObject {
+			return widget.NewLabel("template")
+		},
+		func(id widget.ListItemID, obj fyne.CanvasObject) {
+			label := obj.(*widget.Label)
+			user := gc.users[id]
+			if user == gc.nick {
+				label.SetText("● " + user + " (вы)")
+			} else {
+				label.SetText("○ " + user)
+			}
+		},
+	)
+
 	return gc
 }
 
@@ -100,7 +121,22 @@ func (g *GUIClient) layout() fyne.CanvasObject {
 
 	bottom := container.NewBorder(nil, nil, nil, g.sendBtn, g.messageEntry)
 
-	return container.NewBorder(top, bottom, nil, nil, g.chatScroll)
+	// User list on the right side with fixed width
+	userTitle := widget.NewLabel("👥 Пользователи онлайн")
+	userTitle.TextStyle = fyne.TextStyle{Bold: true}
+	userListContainer := container.NewBorder(
+		userTitle,
+		nil, nil, nil,
+		g.usersList,
+	)
+
+	userScroll := container.NewVScroll(userListContainer)
+	userScroll.SetMinSize(fyne.NewSize(200, 400))
+
+	// Chat in center, users on right
+	content := container.NewBorder(nil, nil, nil, userScroll, g.chatScroll)
+
+	return container.NewBorder(top, bottom, nil, nil, content)
 }
 
 func (g *GUIClient) onConnect() {
@@ -152,6 +188,10 @@ func (g *GUIClient) onConnect() {
 	g.sendBtn.Enable()
 	g.messageEntry.Enable()
 	g.win.Canvas().Focus(g.messageEntry)
+
+	// Server will send user list automatically, no need to request
+	// usersCmd := Message{Type: "command", Data: map[string]string{"command": "users"}}
+	// _ = g.writeJSON(usersCmd)
 
 	go g.readLoop()
 }
@@ -225,12 +265,33 @@ func (g *GUIClient) handleIncoming(msg Message) {
 		g.appendLine(fmt.Sprintf("%s: %s", msg.From, msg.Content))
 	case "private":
 		g.appendLine(fmt.Sprintf("[ЛС] %s: %s", msg.From, msg.Content))
+	case "private_sent":
+		// Confirmation that private message was sent - silent (already echoed locally)
 	case "mass_private":
 		g.appendLine(fmt.Sprintf("[ALL-LS] %s: %s", msg.From, msg.Content))
+	case "mass_private_sent":
+		// Confirmation that mass private was sent - silent (already echoed locally)
 	case "system":
-		g.appendLine(msg.Content)
+		// Replace emoji with simple symbols for macOS compatibility
+		content := msg.Content
+		content = strings.ReplaceAll(content, "🟢", "+")
+		content = strings.ReplaceAll(content, "🔴", "-")
+		content = strings.ReplaceAll(content, "✅", "[OK]")
+		content = strings.ReplaceAll(content, "❌", "[X]")
+		g.appendLine(content)
+		// Auto-refresh user list when someone joins or leaves
+		if strings.Contains(msg.Content, "присоединился") ||
+			strings.Contains(msg.Content, "покинул") ||
+			strings.Contains(msg.Content, "вернулся") {
+			usersCmd := Message{Type: "command", Data: map[string]string{"command": "users"}}
+			_ = g.writeJSON(usersCmd)
+		}
 	case "users":
-		g.appendLine(fmt.Sprintf("👥 Онлайн (%d): %s", len(msg.Users), strings.Join(msg.Users, ", ")))
+		// Update user list and refresh widget
+		g.users = msg.Users
+		g.usersList.Refresh()
+		// Don't show in chat to avoid clutter - list is visible in sidebar
+		// g.appendLine(fmt.Sprintf("👥 Онлайн (%d): %s", len(msg.Users), strings.Join(msg.Users, ", ")))
 	case "help":
 		g.appendLine("📖 Справка по командам:")
 		for k, v := range msg.Data {
