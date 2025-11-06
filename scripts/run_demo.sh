@@ -39,5 +39,11 @@ printf "[run] starting GUI client B...\n"
 FYNE_THEME=dark go run ./client_gui &
 pids+=($!)
 
-# 4) Wait for background jobs (press Ctrl-C to stop)
+# 4) Start third GUI client
+sleep 0.5
+printf "[run] starting GUI client C...\n"
+FYNE_THEME=dark go run ./client_gui &
+pids+=($!)
+
+# 5) Wait for background jobs (press Ctrl-C to stop)
 wait

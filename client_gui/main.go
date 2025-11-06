@@ -38,7 +38,7 @@ type GUIClient struct {
 	port    int
 	running bool
 
-	chatArea     *widget.Label
+	chatArea     *widget.RichText
 	messageEntry *widget.Entry
 	sendBtn      *widget.Button
 	connectBtn   *widget.Button
@@ -49,7 +49,6 @@ type GUIClient struct {
 
 	win fyne.Window
 
-	chatBuf    string
 	chatScroll *container.Scroll
 
 	// User list
@@ -58,8 +57,7 @@ type GUIClient struct {
 }
 
 func NewGUIClient(win fyne.Window) *GUIClient {
-	chat := widget.NewLabel("")
-	chat.Wrapping = fyne.TextWrapWord
+	chat := widget.NewRichText()
 	msgEntry := widget.NewEntry()
 	msgEntry.SetPlaceHolder("Введите сообщение… (#команды и @приват тоже работают)")
 
@@ -264,11 +262,12 @@ func (g *GUIClient) handleIncoming(msg Message) {
 	case "chat":
 		g.appendLine(fmt.Sprintf("%s: %s", msg.From, msg.Content))
 	case "private":
-		g.appendLine(fmt.Sprintf("[ЛС] %s: %s", msg.From, msg.Content))
+		// Highlight private messages with cyan color
+		g.appendPrivateLine(fmt.Sprintf("💬 [ЛС] %s: %s", msg.From, msg.Content))
 	case "private_sent":
 		// Confirmation that private message was sent - silent (already echoed locally)
 	case "mass_private":
-		g.appendLine(fmt.Sprintf("[ALL-LS] %s: %s", msg.From, msg.Content))
+		g.appendPrivateLine(fmt.Sprintf("📢 [ALL-LS] %s: %s", msg.From, msg.Content))
 	case "mass_private_sent":
 		// Confirmation that mass private was sent - silent (already echoed locally)
 	case "system":
@@ -278,7 +277,7 @@ func (g *GUIClient) handleIncoming(msg Message) {
 		content = strings.ReplaceAll(content, "🔴", "-")
 		content = strings.ReplaceAll(content, "✅", "[OK]")
 		content = strings.ReplaceAll(content, "❌", "[X]")
-		g.appendLine(content)
+		g.appendSystemLine(content)
 		// Auto-refresh user list when someone joins or leaves
 		if strings.Contains(msg.Content, "присоединился") ||
 			strings.Contains(msg.Content, "покинул") ||
@@ -394,7 +393,7 @@ func (g *GUIClient) onSend() {
 		if err := g.writeJSON(m); err != nil {
 			g.appendLine("❌ Ошибка отправки: " + err.Error())
 		} else {
-			g.appendLine(fmt.Sprintf("[ЛС] Вы → %s: %s", target, parts[1]))
+			g.appendPrivateLine(fmt.Sprintf("💬 [ЛС] Вы → %s: %s", target, parts[1]))
 		}
 	} else {
 		// normal chat message
@@ -411,15 +410,45 @@ func (g *GUIClient) onSend() {
 }
 
 func (g *GUIClient) appendLine(line string) {
-	if g.chatBuf == "" {
-		g.chatBuf = line
-	} else {
-		g.chatBuf += "\n" + line
+	g.appendLineWithStyle(line, widget.RichTextStyle{})
+}
+
+func (g *GUIClient) appendLineWithStyle(line string, style widget.RichTextStyle) {
+	// Add new text segment to RichText
+	seg := &widget.TextSegment{
+		Text:  line,
+		Style: style,
 	}
-	g.chatArea.SetText(g.chatBuf)
+	
+	// Append to existing segments
+	if len(g.chatArea.Segments) > 0 {
+		// Add newline before new segment
+		g.chatArea.Segments = append(g.chatArea.Segments, &widget.TextSegment{Text: "\n"})
+	}
+	g.chatArea.Segments = append(g.chatArea.Segments, seg)
+	g.chatArea.Refresh()
+	
 	if g.chatScroll != nil {
 		g.chatScroll.ScrollToBottom()
 	}
+}
+
+func (g *GUIClient) appendPrivateLine(line string) {
+	// Cyan/blue style for private messages
+	style := widget.RichTextStyle{
+		ColorName: "primary", // Use theme primary color (usually blue/cyan)
+		TextStyle: fyne.TextStyle{},
+	}
+	g.appendLineWithStyle(line, style)
+}
+
+func (g *GUIClient) appendSystemLine(line string) {
+	// Gray/muted style for system messages
+	style := widget.RichTextStyle{
+		ColorName: "foreground",
+		TextStyle: fyne.TextStyle{Italic: true},
+	}
+	g.appendLineWithStyle(line, style)
 }
 
 func (g *GUIClient) cleanup() {
