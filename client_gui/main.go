@@ -67,8 +67,10 @@ func NewGUIClient(win fyne.Window) *GUIClient {
 
 	gc.serverEntry = widget.NewEntry()
 	gc.serverEntry.SetText(gc.server)
+	gc.serverEntry.SetPlaceHolder("Сервер (напр. localhost)")
 	gc.portEntry = widget.NewEntry()
 	gc.portEntry.SetText(strconv.Itoa(gc.port))
+	gc.portEntry.SetPlaceHolder("Порт (напр. 12345)")
 	gc.nickEntry = widget.NewEntry()
 	gc.nickEntry.SetPlaceHolder("Никнейм")
 
@@ -85,19 +87,17 @@ func NewGUIClient(win fyne.Window) *GUIClient {
 }
 
 func (g *GUIClient) layout() fyne.CanvasObject {
-	connectBar := container.NewHBox(
-		widget.NewLabel("Сервер:"), g.serverEntry,
-		widget.NewLabel("Порт:"), g.portEntry,
-		widget.NewLabel("Ник:"), g.nickEntry,
-		g.connectBtn,
-	)
+	// Make inputs wide by using a 3-column grid filling horizontal space,
+	// with the Connect button anchored on the right.
+	fields := container.NewGridWithColumns(3, g.serverEntry, g.portEntry, g.nickEntry)
+	top := container.NewBorder(nil, nil, nil, g.connectBtn, fields)
 
 	chatScroll := container.NewVScroll(g.chatArea)
-	chatScroll.SetMinSize(fyne.NewSize(400, 300))
+	chatScroll.SetMinSize(fyne.NewSize(600, 400))
 
 	bottom := container.NewBorder(nil, nil, nil, g.sendBtn, g.messageEntry)
 
-	return container.NewBorder(connectBar, bottom, nil, nil, chatScroll)
+	return container.NewBorder(top, bottom, nil, nil, chatScroll)
 }
 
 func (g *GUIClient) onConnect() {
@@ -112,19 +112,19 @@ func (g *GUIClient) onConnect() {
 	portStr := strings.TrimSpace(g.portEntry.Text)
 	p, err := strconv.Atoi(portStr)
 	if err != nil || p <= 0 || p >= 65536 {
-		dialog.ShowError(fmt.Errorf("Некорректный порт: %s", portStr), g.win)
+		dialog.ShowError(fmt.Errorf("некорректный порт: %s", portStr), g.win)
 		return
 	}
 	nick := strings.TrimSpace(g.nickEntry.Text)
 	if nick == "" {
-		dialog.ShowError(fmt.Errorf("Введите никнейм"), g.win)
+		dialog.ShowError(fmt.Errorf("введите никнейм"), g.win)
 		return
 	}
 
 	u := url.URL{Scheme: "ws", Host: fmt.Sprintf("%s:%d", server, p), Path: "/ws"}
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Не удалось подключиться: %w", err), g.win)
+		dialog.ShowError(fmt.Errorf("не удалось подключиться: %w", err), g.win)
 		return
 	}
 
@@ -188,7 +188,7 @@ func (g *GUIClient) login() error {
 		return err
 	}
 	if resp.Type == "error" {
-		return fmt.Errorf(resp.Error)
+		return fmt.Errorf("%s", resp.Error)
 	}
 	if resp.Type != "nick_ok" {
 		return fmt.Errorf("ожидался nick_ok, получено: %s", resp.Type)
@@ -228,6 +228,11 @@ func (g *GUIClient) handleIncoming(msg Message) {
 		g.appendLine(msg.Content)
 	case "users":
 		g.appendLine(fmt.Sprintf("👥 Онлайн (%d): %s", len(msg.Users), strings.Join(msg.Users, ", ")))
+	case "help":
+		g.appendLine("📖 Справка по командам:")
+		for k, v := range msg.Data {
+			g.appendLine(fmt.Sprintf("  %-16s %s", k, v))
+		}
 	case "mailbox_status", "offline_message", "offline_delivered", "offline_saved", "fav_list", "fav_added", "fav_removed", "fav_cleared", "blocked", "unblocked", "wordlengths_toggle", "last_result":
 		// Show the content in a simple way
 		if msg.Content != "" {
@@ -358,7 +363,8 @@ func (g *GUIClient) cleanup() {
 }
 
 func main() {
-	_ = os.Setenv("FYNE_THEME", "light") // optional: default theme
+	// Set dark theme via env to avoid deprecated API warnings
+	_ = os.Setenv("FYNE_THEME", "dark")
 	application := app.New()
 	w := application.NewWindow("WebSocket Chat (GUI)")
 	w.Resize(fyne.NewSize(800, 500))
