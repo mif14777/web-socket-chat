@@ -49,7 +49,8 @@ type GUIClient struct {
 
 	win fyne.Window
 
-	chatBuf string
+	chatBuf    string
+	chatScroll *container.Scroll
 }
 
 func NewGUIClient(win fyne.Window) *GUIClient {
@@ -94,12 +95,12 @@ func (g *GUIClient) layout() fyne.CanvasObject {
 	fields := container.NewGridWithColumns(3, g.serverEntry, g.portEntry, g.nickEntry)
 	top := container.NewBorder(nil, nil, nil, g.connectBtn, fields)
 
-	chatScroll := container.NewVScroll(g.chatArea)
-	chatScroll.SetMinSize(fyne.NewSize(600, 400))
+	g.chatScroll = container.NewVScroll(g.chatArea)
+	g.chatScroll.SetMinSize(fyne.NewSize(600, 400))
 
 	bottom := container.NewBorder(nil, nil, nil, g.sendBtn, g.messageEntry)
 
-	return container.NewBorder(top, bottom, nil, nil, chatScroll)
+	return container.NewBorder(top, bottom, nil, nil, g.chatScroll)
 }
 
 func (g *GUIClient) onConnect() {
@@ -352,6 +353,9 @@ func (g *GUIClient) appendLine(line string) {
 		g.chatBuf += "\n" + line
 	}
 	g.chatArea.SetText(g.chatBuf)
+	if g.chatScroll != nil {
+		g.chatScroll.ScrollToBottom()
+	}
 }
 
 func (g *GUIClient) cleanup() {
